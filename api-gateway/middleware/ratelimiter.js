@@ -1,5 +1,5 @@
 const rateLimit = require('express-rate-limit');
-
+const { sendError } = require('../utils/errorResponse');
 
 const rateLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -8,11 +8,7 @@ const rateLimiter = rateLimit({
     legacyHeaders: false,
     handler: (req, res) => {
         console.warn(`[${req.requestId}] RATE_LIMIT_EXCEEDED: ${req.ip}`);
-        res.status(429).json({
-            error: 'Too Many Requests',
-            message: `Rate limit exceeded. Try again in a minute.`,
-            requestId: req.requestId
-        });
+        sendError(res, 429, 'Too Many Requests', 'Rate limit exceeded. Try again in a minute.', req.requestId);
     }
 })
 

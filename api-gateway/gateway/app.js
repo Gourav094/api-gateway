@@ -3,6 +3,7 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const requestIdMiddleware = require('../middleware/requestId.middleware');
 const rateLimiter = require('../middleware/ratelimiter');
 const requestValidator = require('../middleware/validation');
+const { sendError } = require('../utils/errorResponse');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -38,24 +39,12 @@ const createProxyConfig = (target, serviceName) => ({
             console.error(`[${req.requestId}] (${serviceName}):`, err.message);
 
             if (err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT') {
-                return res.status(504).json({
-                    error: 'Gateway Timeout',
-                    message: `${serviceName} service took too long to respond.`,
-                    requestId: req.requestId
-                });
+                return sendError(res, 504, 'Gateway Timeout', `${serviceName} service took too long to respond.`, req.requestId);
             }
             if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
-                return res.status(502).json({ 
-                    error: 'Bad Gateway',
-                    message: `${serviceName} service is currently unreachable`,
-                    requestId: req.requestId
-                });
+                return sendError(res, 502, 'Bad Gateway', `${serviceName} service is currently unreachable`, req.requestId);
             }
-            res.status(502).json({ 
-                error: 'Bad Gateway',
-                message: 'An unexpected error occurred while proxying the request',
-                requestId: req.requestId
-            });
+            sendError(res, 502, 'Bad Gateway', 'An unexpected error occurred while proxying the request', req.requestId);
         }
     }
 });
@@ -63,7 +52,6 @@ const createProxyConfig = (target, serviceName) => ({
 app.use('/orders', createProxyMiddleware(createProxyConfig('http://localhost:8000', 'Orders')));
 
 app.use("/payments", createProxyMiddleware(createProxyConfig('http://localhost:8001', 'Payments')));
-
 
 // parse json payload
 app.use(express.json());
@@ -74,18 +62,12 @@ app.get("/", (req,res) => {
 })
 
 app.use((req, res, next) => {
-    res.status(404).json({
-        error: 'Not Found',
-        message: 'The requested resource does not exist',
-        requestId: req.requestId
-    });
+    sendError(res, 404, 'Not Found', 'The requested resource does not exist', req.requestId);
 });
 
 // Global error handler
 app.use((err, req, res, next) => {
-    console.log('Error', err.message);
-    res.status(500).json({
-        error: err.message || "Internal server error"
-    })
+    console.error(`[${req.requestId}] Error:`, err.message);
+    sendError(res, err.status || 500, err.message || 'Internal Server Error', 'An unexpected error occurred', req.requestId);
 })
 module.exports = app
