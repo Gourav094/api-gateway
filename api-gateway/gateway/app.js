@@ -3,7 +3,6 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const requestIdMiddleware = require('../middleware/requestId.middleware');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 
 app.use(requestIdMiddleware);
@@ -18,8 +17,8 @@ app.get('/health', (req,res) => {
 const createProxyConfig = (target, serviceName) => ({
     target,
     changeOrigin: true,
-    proxyTimeout: 10000,
-    timeout: 11000,
+    connectTimeout: 5000,
+    proxyTimeout: 5000,
     pathRewrite: (path) => path.replace(new RegExp(`^/${serviceName.toLowerCase()}`), ''),
     on: {
         proxyReq: (proxyReq, req) => {
@@ -31,9 +30,18 @@ const createProxyConfig = (target, serviceName) => ({
         },
         error: (err, req, res) => {
             console.error(`[${req.requestId}] (${serviceName}):`, err.message);
-            res.status(503).json({ 
-                error: `${serviceName} service unavailable`,
-                message: err.message 
+
+            if (err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT' || err.code === 'ENOTFOUND') {
+                return res.status(504).json({
+                    error: 'Gateway Timeout',
+                    message: `${serviceName} service took too long to respond.`,
+                    requestId: req.requestId
+                });
+            }
+
+            res.status(502).json({ 
+                error: 'Bad Gateway',
+                message: `${serviceName} service is unreachable.` 
             });
         }
     }
@@ -59,16 +67,4 @@ app.use((err, req, res, next) => {
         error: err.message || "Internal server error"
     })
 })
-
-const server = app.listen(PORT,() => {
-    console.log(` Api gateway running on ${PORT}`)
-})
-
-process.on('SIGTERM', () => {
-    console.log('SIGTERM received, closing server...');
-    server.close(() => {
-        console.log('Server closed');
-        process.exit(0);
-    });
-});
-
+module.exports = app
