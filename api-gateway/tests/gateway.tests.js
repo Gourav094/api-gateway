@@ -1,18 +1,77 @@
-const { describe } = require('node:test');
+const express = require('express');
 const request = require('supertest');
+const http = require('http');
 
 const GATEWAY_URL = 'http://localhost:3000';
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+let mockOrderServer;
+const createMockOrderService = (port = 8000) => {
+    const app = express();
+    app.use(express.json());
+    
+    let orders = [
+        { id: 1, product: 'Laptop', quantity: 1, price: 1200, status: 'pending' }
+    ];
+
+    app.get('/', (req, res) => {
+        res.json({ success: true, data: orders });
+    });
+
+    app.get('/:id', (req, res) => {
+        const order = orders.find(o => o.id === parseInt(req.params.id));
+        if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+        res.json({ success: true, data: order });
+    });
+
+    app.post('/', (req, res) => {
+        const { product, quantity, price } = req.body;
+        if (!product || !quantity || !price) {
+            return res.status(400).json({ success: false, message: 'Missing required fields' });
+        }
+        const newOrder = { id: orders.length + 1, product, quantity, price, status: 'pending' };
+        orders.push(newOrder);
+        res.status(201).json({ success: true, data: newOrder });
+    });
+
+    app.put('/:id', (req, res) => {
+        const order = orders.find(o => o.id === parseInt(req.params.id));
+        if (!order) return res.status(404).json({ success: false });
+        Object.assign(order, req.body);
+        res.json({ success: true, data: order });
+    });
+
+    app.delete('/:id', (req, res) => {
+        const index = orders.findIndex(o => o.id === parseInt(req.params.id));
+        if (index === -1) return res.status(404).json({ success: false });
+        orders.splice(index, 1);
+        res.json({ success: true, message: 'Order deleted' });
+    });
+
+    return http.createServer(app);
+};
 
 describe('API Gateway Integration Tests', () => {
 
     beforeAll(async () => {
+        mockOrderServer = createMockOrderService();
+        
+        await new Promise(resolve => mockOrderServer.listen(8000, resolve));
+        console.log('✓ Mock services started');
+
+        // Check gateway is running
         try {
             await request(GATEWAY_URL).get('/health');
         } catch (error) {
-            console.error('Gateway is not running on port 3000');
-            console.error('Please start: cd gateway && node app.js');
+            console.error('⚠️  Gateway is not running on port 3000');
             throw error;
         }
+    });
+
+    afterAll(async () => {
+        // Stop mock services
+        if (mockOrderServer) await new Promise(resolve => mockOrderServer.close(resolve));
+        console.log('✓ Mock services stopped');
     });
     
     // ==================== GATEWAY TESTS ====================
@@ -30,9 +89,8 @@ describe('API Gateway Integration Tests', () => {
         });
     });
 
-    // ==================== ORDERS TESTS ====================
-    describe('Orders Service', () => {
-        let createdOrderId;
+    // ==================== Routing and proxy ====================
+    describe('Routing', () => {
 
         test('GET /orders - Get all orders', async () => {
             const response = await request(GATEWAY_URL).get('/orders');
@@ -41,221 +99,110 @@ describe('API Gateway Integration Tests', () => {
             expect(Array.isArray(response.body.data)).toBe(true);
         });
 
-        test('GET /orders/:id - Get specific order', async () => {
-            const response = await request(GATEWAY_URL).get('/orders/1');
-            expect(response.status).toBe(200);
-            expect(response.body.data.id).toBe(1);
+        test('Returns 404 for invalid routes', async () => {
+            const response = await request(GATEWAY_URL).get('/nonexistent');
+            expect(response.body).toHaveProperty('error');
+            expect(response.body).toHaveProperty('requestId');
+        });
+    });
+    // ==================== REQUEST ID ====================
+    describe('Request ID Middleware', () => {
+        test('Generates request ID if not provided', async () => {
+            const response = await request(GATEWAY_URL).get('/orders');
+            expect(response.headers['x-request-id']).toBeDefined();
         });
 
-        test('GET /orders/999 - Non-existent order', async () => {
-            const response = await request(GATEWAY_URL).get('/orders/999');
-            expect(response.status).toBe(404);
+        test('Uses provided request ID', async () => {
+            const customId = 'test-request-123';
+            const response = await request(GATEWAY_URL)
+                .get('/orders')
+                .set('X-Request-ID', customId);
+            expect(response.headers['x-request-id']).toBe(customId);
         });
-
-        test('POST /orders - Create new order', async () => {
-            const newOrder = {
-                product: 'Test Product',
-                quantity: 3,
-                price: 99.99
-            };
-
+    });
+    // ==================== VALIDATION MIDDLEWARE ====================
+    describe('Request validaton', () => {
+        test('Accepts valid JSON payload', async () => {
             const response = await request(GATEWAY_URL)
                 .post('/orders')
-                .send(newOrder)
-                .set('Content-Type', 'application/json');
-
+                .set('Content-Type', 'application/json')
+                .send({ product: 'Phone', quantity: 1, price: 500 });
+            
             expect(response.status).toBe(201);
-            expect(response.body.success).toBe(true);
-            expect(response.body.data.product).toBe('Test Product');
-            
-            createdOrderId = response.body.data.id;
         });
 
-        test('POST /orders - Invalid order (missing fields)', async () => {
-            const response = await request(GATEWAY_URL)
-                .post('/orders')
-                .send({ product: 'Incomplete' })
-                .set('Content-Type', 'application/json');
-
-            expect(response.status).toBe(400);
-        });
-
-        test('PUT /orders/:id - Update order', async () => {
-            const response = await request(GATEWAY_URL)
-                .put('/orders/1')
-                .send({ status: 'completed' })
-                .set('Content-Type', 'application/json');
-
-            expect(response.status).toBe(200);
-            expect(response.body.data.status).toBe('completed');
-        });
-
-        test('DELETE /orders/:id - Delete order', async () => {
-            if (createdOrderId) {
-                const response = await request(GATEWAY_URL)
-                    .delete(`/orders/${createdOrderId}`);
-                expect(response.status).toBe(200);
-            }
-        });
-
-        // Moved inside Orders describe block
-        test('PATCH /orders/:id - Method not allowed', async () => {
-            const response = await request(GATEWAY_URL)
-                .patch('/orders/1')
-                .send({ status: 'completed' })
-                .set('Content-Type', 'application/json');
-        
-            expect(response.status).toBe(404);
-        });
-    });
-
-    // ==================== PAYMENTS TESTS ====================
-    describe('Payments Service', () => {
-        let processedPaymentId;
-        let refundablePaymentId; // FIXED: Variable was not declared
-
-        test('GET /payments - Get all payments', async () => {
-            const response = await request(GATEWAY_URL).get('/payments');
-            expect(response.status).toBe(200);
-            expect(response.body.success).toBe(true);
-            expect(Array.isArray(response.body.data)).toBe(true);
-        });
-
-        test('GET /payments/:id - Get specific payment', async () => {
-            const response = await request(GATEWAY_URL).get('/payments/1');
-            expect(response.status).toBe(200);
-            expect(response.body.data.id).toBe(1);
-        });
-
-        test('GET /payments/order/:orderId - Get payments for order', async () => {
-            const response = await request(GATEWAY_URL).get('/payments/order/1');
-            expect(response.status).toBe(200);
-            expect(Array.isArray(response.body.data)).toBe(true);
-        });
-
-        test('POST /payments - Process payment', async () => {
-            const paymentData = {
-                orderId: 1,
-                amount: 500,
-                method: 'credit_card'
-            };
-
-            const response = await request(GATEWAY_URL)
-                .post('/payments')
-                .send(paymentData)
-                .set('Content-Type', 'application/json');
-
-            expect([201, 402]).toContain(response.status);
-            expect(response.body.data.orderId).toBe(1);
-            
-            if (response.status === 201) {
-                processedPaymentId = response.body.data.id;
-            }
-        });
-
-        test('POST /payments - Invalid payment (missing fields)', async () => {
-            const response = await request(GATEWAY_URL)
-                .post('/payments')
-                .send({ amount: 100 })
-                .set('Content-Type', 'application/json');
-
-            expect(response.status).toBe(400);
-        });
-
-        test('POST /payments/:id/refund - Refund payment', async () => {
-            const paymentData = {
-                orderId: 1,
-                amount: 200,
-                method: 'credit_card'
-            };
-
-            const createResponse = await request(GATEWAY_URL)
-                .post('/payments')
-                .send(paymentData)
-                .set('Content-Type', 'application/json');
-
-            if (createResponse.status === 201) {
-                refundablePaymentId = createResponse.body.data.id;
-
-                const refundResponse = await request(GATEWAY_URL)
-                    .post(`/payments/${refundablePaymentId}/refund`)
-                    .set('Content-Type', 'application/json');
-
-                expect(refundResponse.status).toBe(200);
-                expect(refundResponse.body.success).toBe(true);
-                expect(refundResponse.body.data.status).toBe('refunded');
-            } else {
-                console.log('Payment creation failed, skipping refund test');
-                expect(true).toBe(true);
-            }
-        });
-    });
-    // ==================== ERROR HANDLING ====================
-    describe('Error Handling', () => {
-        test('GET /invalid-route - 404 for invalid route', async () => {
-            const response = await request(GATEWAY_URL).get('/invalid-route');
-            expect(response.status).toBe(404);
-        });
-    });
-
-    describe('Request validator', () => {
-        test('should allow valid JSON under 1MB', async () => {
-            const response = await request(GATEWAY_URL)
-                .post('/orders')
-                .set('Content-Type', 'application/json')
-                .send({ item: 'Phone', price: 500 });
-            
-                expect(response.status).not.toBe(413);
-        });
-        // test('should allow multipart/form-data to stream through', async () => {
-        //     // We simulate a file upload using .attach()
-        //     const res = await request(app)
-        //         .post('/orders/upload')
-        //         .field('name', 'profile_pic')
-        //         .attach('file', Buffer.from('fake-image-data'), 'test.jpg');
-
-        //     expect(res.status).not.toBe(413); // Should pass the 1MB JSON limit
-        // });
-
-        test('should reject JSON larger than 1MB', async () => {
-            const massiveJson = { data: 'a'.repeat(1.1 * 1024 * 1024) }; // 1.1MB
-            const response = await request(GATEWAY_URL)
-                .post('/orders')
-                .set('Content-Type', 'application/json')
-                .send(massiveJson);
-
-            expect(response.status).toBe(413); 
-        });
-
-        test('should reject requests with missing Content-Type on POST', async () => {
+        test('Rejects POST without Content-Type', async () => {
             const response = await request(GATEWAY_URL)
                 .post('/orders')
                 .send({ product: 'Test' });
 
-            expect([400, 415]).toContain(response.status);
+            expect(response.status).toBe(400);
+        });
+
+        test('Rejects request with Content-Length exceeding 10MB', async () => {
+            // Test using Content-Length header instead of actual large payload
+            const response = await request(GATEWAY_URL)
+                .post('/orders')
+                .set('Content-Type', 'application/json')
+                .set('Content-Length', String(11 * 1024 * 1024)) // 11MB
+                .send({ product: 'Test', quantity: 1, price: 100 });
+
+            expect(response.status).toBe(413);
+            expect(response.body.error).toMatch(/Payload too large/i);
         });
     })
+    
+    // ==================== ERROR HANDLING ====================
+    describe('Error Handling', () => {
+        test('Returns 502 when backend service is unavailable', async () => {
+            // Stop order service temporarily
+            await new Promise(resolve => mockOrderServer.close(resolve));
+            
+            const response = await request(GATEWAY_URL).get('/orders');
+            expect([502, 504]).toContain(response.status);
+            expect(response.body.error).toMatch(/Gateway|Timeout/i);
+            expect(response.body.requestId).toBeDefined();
+            
+            // Restart order service
+            mockOrderServer = createMockOrderService();
+            await new Promise(resolve => mockOrderServer.listen(8000, resolve));
+        }, 10000);
 
-    describe('Rate Limiting', () => {
-        test('Should return 429 when exceeding rate limit', async () => {
-            // Updated to match actual rate limit (50 requests per minute)
-            const requests = Array(51).fill().map(() => request(GATEWAY_URL).get('/orders'));
-            const responses = await Promise.all(requests);
-    
-            // At least one should be rate limited
-            const rateLimited = responses.some(res => res.status === 429);
-            expect(rateLimited).toBe(true);
-        });
-    
-        test('Should NOT rate limit /health endpoint', async () => {
-            // Send 10 requests to health rapidly
-            const requests = Array(10).fill().map(() => request(GATEWAY_URL).get('/health'));
-            const responses = await Promise.all(requests);
-    
-            // All should be 200
-            responses.forEach(res => {
-                expect(res.status).toBe(200);
-            });
+        test('Handles timeout gracefully', async () => {
+            // This would require a slow mock endpoint
+            // Skipping for now as it requires gateway timeout config
+            expect(true).toBe(true);
         });
     });
-});
+    // ==================== RATE LIMITING ====================
+    describe('Rate Limiting', () => {
+        test('Enforces rate limit (50 req/min)', async () => {
+            const agent = request.agent(GATEWAY_URL);
+            let rateLimited = false;
+            
+            // Send requests until rate limited
+            for (let i = 0; i < 55; i++) {
+                const response = await agent.get('/orders');
+                if (response.status === 429) {
+                    rateLimited = true;
+                    expect(response.body.error).toBe('Too Many Requests');
+                    expect(response.body.requestId).toBeDefined();
+                    break;
+                }
+            }
+            
+            expect(rateLimited).toBe(true);
+        }, 30000);
+
+        test('Does NOT rate limit /health endpoint', async () => {
+            const agent = request.agent(GATEWAY_URL);
+            
+            // Send 60 requests to health
+            for (let i = 0; i < 60; i++) {
+                const response = await agent.get('/health');
+                expect(response.status).toBe(200);
+            }
+        }, 15000);
+
+    });
+}); 

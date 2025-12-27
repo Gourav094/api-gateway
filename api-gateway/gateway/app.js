@@ -37,17 +37,24 @@ const createProxyConfig = (target, serviceName) => ({
         error: (err, req, res) => {
             console.error(`[${req.requestId}] (${serviceName}):`, err.message);
 
-            if (err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT' || err.code === 'ENOTFOUND') {
+            if (err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT') {
                 return res.status(504).json({
                     error: 'Gateway Timeout',
                     message: `${serviceName} service took too long to respond.`,
                     requestId: req.requestId
                 });
             }
-
+            if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
+                return res.status(502).json({ 
+                    error: 'Bad Gateway',
+                    message: `${serviceName} service is currently unreachable`,
+                    requestId: req.requestId
+                });
+            }
             res.status(502).json({ 
                 error: 'Bad Gateway',
-                message: `${serviceName} service is unreachable.` 
+                message: 'An unexpected error occurred while proxying the request',
+                requestId: req.requestId
             });
         }
     }
@@ -65,6 +72,14 @@ app.use(express.urlencoded({extended:true}));
 app.get("/", (req,res) => {
     res.status(200).json({message: "Welcome to API Gateway!"})
 })
+
+app.use((req, res, next) => {
+    res.status(404).json({
+        error: 'Not Found',
+        message: 'The requested resource does not exist',
+        requestId: req.requestId
+    });
+});
 
 // Global error handler
 app.use((err, req, res, next) => {
