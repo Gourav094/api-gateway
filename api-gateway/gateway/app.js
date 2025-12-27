@@ -1,5 +1,5 @@
 const express = require('express')
-
+const cors = require('cors');
 const requestIdMiddleware = require('../middleware/requestId.middleware');
 const rateLimiter = require('../middleware/ratelimiter');
 const requestValidator = require('../middleware/validation');
@@ -11,6 +11,14 @@ require('dotenv').config();
 
 const app = express();
 app.set('trust proxy', config.gateway.trustProxy);
+
+// parse json payload
+app.use(express.json({ limit: config.gateway.bodyLimit || '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+if (config.cors?.enabled === true) {
+    app.use(cors(config.cors.options));
+}
 
 // Request ID tracing for each request
 app.use(requestIdMiddleware);
@@ -29,10 +37,6 @@ if (config.gateway.rateLimit.enabled) {
 }
 
 app.use(requestValidator)
-
-// parse json payload
-app.use(express.json({ limit: config.gateway.bodyLimit || '10mb' }));
-app.use(express.urlencoded({ extended: true }));
 
 Object.entries(config.services).forEach(([serviceKey, serviceConfig]) => {
     if (serviceConfig.enabled === false) {

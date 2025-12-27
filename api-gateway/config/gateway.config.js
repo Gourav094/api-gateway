@@ -11,6 +11,16 @@ module.exports = {
             max: 100
         }
     },
+    cors: {
+        enabled: false,              
+        options: {
+          origin: ['http://localhost:8000'],
+          methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+          allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+          credentials: true,
+          maxAge: 86400
+        }
+    },
     services: {
         orders: {
             name: 'orders',
