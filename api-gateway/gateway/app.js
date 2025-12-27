@@ -2,6 +2,7 @@ const express = require('express')
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const requestIdMiddleware = require('../middleware/requestId.middleware');
 const rateLimiter = require('../middleware/ratelimiter');
+const requestValidator = require('../middleware/validation');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -16,6 +17,8 @@ app.get('/health', (req,res) => {
 })
 
 app.use(rateLimiter)
+
+app.use(requestValidator)
 
 const createProxyConfig = (target, serviceName) => ({
     target,

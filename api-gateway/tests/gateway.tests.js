@@ -1,3 +1,4 @@
+const { describe } = require('node:test');
 const request = require('supertest');
 
 const GATEWAY_URL = 'http://localhost:3000';
@@ -196,6 +197,45 @@ describe('API Gateway Integration Tests', () => {
             expect(response.status).toBe(404);
         });
     });
+
+    describe('Request validator', () => {
+        test('should allow valid JSON under 1MB', async () => {
+            const response = await request(GATEWAY_URL)
+                .post('/orders')
+                .set('Content-Type', 'application/json')
+                .send({ item: 'Phone', price: 500 });
+            
+                expect(response.status).not.toBe(413);
+        });
+        // test('should allow multipart/form-data to stream through', async () => {
+        //     // We simulate a file upload using .attach()
+        //     const res = await request(app)
+        //         .post('/orders/upload')
+        //         .field('name', 'profile_pic')
+        //         .attach('file', Buffer.from('fake-image-data'), 'test.jpg');
+
+        //     expect(res.status).not.toBe(413); // Should pass the 1MB JSON limit
+        // });
+
+        test('should reject JSON larger than 1MB', async () => {
+            const massiveJson = { data: 'a'.repeat(1.1 * 1024 * 1024) }; // 1.1MB
+            const response = await request(GATEWAY_URL)
+                .post('/orders')
+                .set('Content-Type', 'application/json')
+                .send(massiveJson);
+
+            expect(response.status).toBe(413); 
+        });
+
+        test('should reject requests with missing Content-Type on POST', async () => {
+            const response = await request(GATEWAY_URL)
+                .post('/orders')
+                .send({ product: 'Test' });
+
+            expect([400, 415]).toContain(response.status);
+        });
+    })
+
     describe('Rate Limiting', () => {
         test('Should return 429 when exceeding rate limit', async () => {
             // Updated to match actual rate limit (50 requests per minute)
