@@ -1,60 +1,47 @@
 const express = require('express')
 const { createProxyMiddleware } = require('http-proxy-middleware');
+const requestIdMiddleware = require('../middleware/requestId.middleware');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 
-const orderProxy = createProxyMiddleware({
-    target: 'http://localhost:8000',
+app.use(requestIdMiddleware);
+
+app.get('/health', (req,res) => {
+    res.status(200).json({
+        status: "Healthy",
+        timestamp: new Date().toISOString()
+    })
+})
+
+const createProxyConfig = (target, serviceName) => ({
+    target,
     changeOrigin: true,
     proxyTimeout: 10000,
     timeout: 11000,
-    pathRewrite: {
-        '^/orders': '' // remove /orders prefix before forwaring the whole endpoint
-    },
-    onProxyReq: (proxyReq, req, res) => {
-        console.log(`[PROXY] ${req.method} ${req.originalUrl} -> ${proxyReq.path}`);
-    },
-    onProxyRes: (proxyRes, req, res) => {
-        console.log(`[PROXY RESPONSE] ${proxyRes.statusCode} from orders service`);
-    },
-    onError: (err, req, res) => {
-        console.error('[PROXY ERROR]:', err.message);
-        res.status(503).json({ 
-            error: 'Orders service unavailable',
-            message: err.message 
-        });
+    pathRewrite: (path) => path.replace(new RegExp(`^/${serviceName.toLowerCase()}`), ''),
+    on: {
+        proxyReq: (proxyReq, req) => {
+            proxyReq.setHeader('X-Request-ID', req.requestId);
+            console.log(`[${req.requestId}] ${req.method} ${req.originalUrl} -> ${serviceName}`);
+        },
+        proxyRes: (proxyRes, req) => {
+            console.log(`[${req.requestId}] ${proxyRes.statusCode} from ${serviceName}`);
+        },
+        error: (err, req, res) => {
+            console.error(`[${req.requestId}] (${serviceName}):`, err.message);
+            res.status(503).json({ 
+                error: `${serviceName} service unavailable`,
+                message: err.message 
+            });
+        }
     }
-})
+});
 
-const paymentProxy = createProxyMiddleware({
-    target: 'http://localhost:8001',
-    changeOrigin: true,
-    proxyTimeout: 10000,
-    timeout: 11000,
-    pathRewrite: {
-        '^/payments': ''
-    },
-    onProxyReq: (proxyReq, req, res) => {
-        console.log(`[PROXY] ${req.method} ${req.originalUrl} -> ${proxyReq.path}`);
-    },
-    onProxyRes: (proxyRes, req, res) => {
-        console.log(`[PROXY RESPONSE] ${proxyRes.statusCode} from payments service`);
-    },
-    onError: (err, req, res) => {
-        console.error('[PROXY ERROR]:', err.message);
-        res.status(503).json({ 
-            error: 'Payment service unavailable',
-            message: err.message 
-        });
-    }
-})
+app.use('/orders', createProxyMiddleware(createProxyConfig('http://localhost:8000', 'Orders')));
 
-
-app.use('/orders', orderProxy);
-
-app.use("/payments", paymentProxy);
+app.use("/payments", createProxyMiddleware(createProxyConfig('http://localhost:8001', 'Payments')));
 
 
 // parse json payload
@@ -65,15 +52,7 @@ app.get("/", (req,res) => {
     res.status(200).json({message: "Welcome to API Gateway!"})
 })
 
-app.get('/health', (req,res) => {
-    res.status(200).json({
-        status: "Healthy",
-        timestamp: new Date().toISOString()
-    })
-})
-
-
-
+// Global error handler
 app.use((err, req, res, next) => {
     console.log('Error', err.message);
     res.status(500).json({
@@ -93,4 +72,3 @@ process.on('SIGTERM', () => {
     });
 });
 
-module.exports = app;

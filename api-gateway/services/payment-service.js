@@ -4,6 +4,13 @@ const PORT = process.env.PORT || 8001;
 
 app.use(express.json());
 
+app.use((req, res, next) => {
+    const requestId = req.headers['X-Request-ID'] || 'no-id';
+    req.requestId = requestId;
+    console.log(`[${requestId}] [PAYMENTS SERVICE] ${req.method} ${req.path}`);
+    next();
+});
+
 // In-memory storage
 let payments = [
     { id: 1, orderId: 1, amount: 1200, method: 'credit_card', status: 'completed', transactionId: 'TXN001' },
