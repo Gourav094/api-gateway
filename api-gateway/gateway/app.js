@@ -1,64 +1,59 @@
 const express = require('express')
-const { createProxyMiddleware } = require('http-proxy-middleware');
+
 const requestIdMiddleware = require('../middleware/requestId.middleware');
 const rateLimiter = require('../middleware/ratelimiter');
 const requestValidator = require('../middleware/validation');
+const config = require('../config/gateway.config');
 const { sendError } = require('../utils/errorResponse');
+const createServiceProxy = require('../middleware/proxy');
+
+require('dotenv').config();
 
 const app = express();
-app.set('trust proxy', 1);
+app.set('trust proxy', config.gateway.trustProxy);
 
+// Request ID tracing for each request
 app.use(requestIdMiddleware);
 
-app.get('/health', (req,res) => {
+app.get('/health', (req, res) => {
     res.status(200).json({
         status: "Healthy",
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        environment: config.gateway.environment || "development",
     })
 })
 
-app.use(rateLimiter)
+// Global limiter
+if (config.gateway.rateLimit.enabled) {
+    app.use(rateLimiter(config.gateway.rateLimit))
+}
 
 app.use(requestValidator)
 
-const createProxyConfig = (target, serviceName) => ({
-    target,
-    changeOrigin: true,
-    connectTimeout: 5000,
-    proxyTimeout: 5000,
-    pathRewrite: (path) => path.replace(new RegExp(`^/${serviceName.toLowerCase()}`), ''),
-    on: {
-        proxyReq: (proxyReq, req) => {
-            proxyReq.setHeader('X-Request-ID', req.requestId);
-            console.log(`[${req.requestId}] ${req.method} ${req.originalUrl} -> ${serviceName}`);
-        },
-        proxyRes: (proxyRes, req) => {
-            console.log(`[${req.requestId}] ${proxyRes.statusCode} from ${serviceName}`);
-        },
-        error: (err, req, res) => {
-            console.error(`[${req.requestId}] (${serviceName}):`, err.message);
+// parse json payload
+app.use(express.json({ limit: config.gateway.bodyLimit || '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-            if (err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT') {
-                return sendError(res, 504, 'Gateway Timeout', `${serviceName} service took too long to respond.`, req.requestId);
-            }
-            if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
-                return sendError(res, 502, 'Bad Gateway', `${serviceName} service is currently unreachable`, req.requestId);
-            }
-            sendError(res, 502, 'Bad Gateway', 'An unexpected error occurred while proxying the request', req.requestId);
-        }
+Object.entries(config.services).forEach(([serviceKey, serviceConfig]) => {
+    if (serviceConfig.enabled === false) {
+        return;
     }
+    const middlewares = []
+    if (serviceConfig.rateLimit && serviceConfig.rateLimit.enabled) {
+        middlewares.push(rateLimiter(serviceConfig.rateLimit));
+    }
+    middlewares.push(createServiceProxy(serviceConfig.name, serviceConfig));
+    app.use(serviceConfig.route, ...middlewares);
+    
+    console.log(`✓ Service [${serviceConfig.name}] registered on ${serviceConfig.route}`);
 });
 
-app.use('/orders', createProxyMiddleware(createProxyConfig('http://localhost:8000', 'Orders')));
-
-app.use("/payments", createProxyMiddleware(createProxyConfig('http://localhost:8001', 'Payments')));
-
-// parse json payload
-app.use(express.json());
-app.use(express.urlencoded({extended:true}));
-
-app.get("/", (req,res) => {
-    res.status(200).json({message: "Welcome to API Gateway!"})
+app.get("/", (req, res) => {
+    res.status(200).json({ 
+        message: "Welcome to API Gateway!",
+        version: '1.0.0',
+        environment: config.gateway.environment
+    })
 })
 
 app.use((req, res, next) => {

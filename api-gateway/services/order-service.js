@@ -26,7 +26,7 @@ app.get('/', (req, res) => {
 });
 
 // Get order by ID
-app.get('/:id', (req, res) => {
+app.get('/orderId/:id', (req, res) => {
     const order = orders.find(o => o.id === parseInt(req.params.id));
     
     if (!order) {

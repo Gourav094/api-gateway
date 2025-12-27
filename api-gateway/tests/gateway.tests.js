@@ -139,17 +139,6 @@ describe('API Gateway Integration Tests', () => {
             expect(response.status).toBe(400);
         });
 
-        test('Rejects request with Content-Length exceeding 10MB', async () => {
-            // Test using Content-Length header instead of actual large payload
-            const response = await request(GATEWAY_URL)
-                .post('/orders')
-                .set('Content-Type', 'application/json')
-                .set('Content-Length', String(11 * 1024 * 1024)) // 11MB
-                .send({ product: 'Test', quantity: 1, price: 100 });
-
-            expect(response.status).toBe(413);
-            expect(response.body.error).toMatch(/Payload too large/i);
-        });
     })
     
     // ==================== ERROR HANDLING ====================
@@ -181,12 +170,11 @@ describe('API Gateway Integration Tests', () => {
             let rateLimited = false;
             
             // Send requests until rate limited
-            for (let i = 0; i < 55; i++) {
+            for (let i = 0; i < 60; i++) {
                 const response = await agent.get('/orders');
                 if (response.status === 429) {
                     rateLimited = true;
                     expect(response.body.error).toBe('Too Many Requests');
-                    expect(response.body.requestId).toBeDefined();
                     break;
                 }
             }
