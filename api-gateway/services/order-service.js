@@ -10,6 +10,12 @@ let orders = [
     { id: 2, product: 'Mouse', quantity: 2, price: 25, status: 'completed' }
 ];
 
+app.use((req, res, next) => {
+    const requestId = req.headers['x-request-id'] || req.headers['X-Request-ID'] || 'no-id';
+    console.log(`[${requestId}] [ORDERS SERVICE] ${req.method} ${req.path}`); 
+    next();
+});
+
 // Get all orders
 app.get('/', (req, res) => {
     res.json({
