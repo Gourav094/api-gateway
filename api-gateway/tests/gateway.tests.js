@@ -96,19 +96,22 @@ describe('API Gateway Integration Tests', () => {
                 expect(response.status).toBe(200);
             }
         });
-    });
-    test('PATCH /orders/:id - Method not allowed', async () => {
-        const response = await request(GATEWAY_URL)
-            .patch('/orders/1')
-            .send({ status: 'completed' })
-            .set('Content-Type', 'application/json');
-    
-        expect(response.status).toBe(404);
+
+        // Moved inside Orders describe block
+        test('PATCH /orders/:id - Method not allowed', async () => {
+            const response = await request(GATEWAY_URL)
+                .patch('/orders/1')
+                .send({ status: 'completed' })
+                .set('Content-Type', 'application/json');
+        
+            expect(response.status).toBe(404);
+        });
     });
 
     // ==================== PAYMENTS TESTS ====================
     describe('Payments Service', () => {
         let processedPaymentId;
+        let refundablePaymentId; // FIXED: Variable was not declared
 
         test('GET /payments - Get all payments', async () => {
             const response = await request(GATEWAY_URL).get('/payments');
@@ -159,7 +162,6 @@ describe('API Gateway Integration Tests', () => {
         });
 
         test('POST /payments/:id/refund - Refund payment', async () => {
-            // Create a fresh payment specifically for refund testing
             const paymentData = {
                 orderId: 1,
                 amount: 200,
@@ -171,7 +173,6 @@ describe('API Gateway Integration Tests', () => {
                 .send(paymentData)
                 .set('Content-Type', 'application/json');
 
-            // If payment creation succeeded, test refund
             if (createResponse.status === 201) {
                 refundablePaymentId = createResponse.body.data.id;
 
@@ -183,18 +184,38 @@ describe('API Gateway Integration Tests', () => {
                 expect(refundResponse.body.success).toBe(true);
                 expect(refundResponse.body.data.status).toBe('refunded');
             } else {
-                // If payment failed (10% chance), skip the test gracefully
                 console.log('Payment creation failed, skipping refund test');
                 expect(true).toBe(true);
             }
         });
     });
-
     // ==================== ERROR HANDLING ====================
     describe('Error Handling', () => {
         test('GET /invalid-route - 404 for invalid route', async () => {
             const response = await request(GATEWAY_URL).get('/invalid-route');
             expect(response.status).toBe(404);
+        });
+    });
+    describe('Rate Limiting', () => {
+        test('Should return 429 when exceeding rate limit', async () => {
+            // Updated to match actual rate limit (50 requests per minute)
+            const requests = Array(51).fill().map(() => request(GATEWAY_URL).get('/orders'));
+            const responses = await Promise.all(requests);
+    
+            // At least one should be rate limited
+            const rateLimited = responses.some(res => res.status === 429);
+            expect(rateLimited).toBe(true);
+        });
+    
+        test('Should NOT rate limit /health endpoint', async () => {
+            // Send 10 requests to health rapidly
+            const requests = Array(10).fill().map(() => request(GATEWAY_URL).get('/health'));
+            const responses = await Promise.all(requests);
+    
+            // All should be 200
+            responses.forEach(res => {
+                expect(res.status).toBe(200);
+            });
         });
     });
 });
