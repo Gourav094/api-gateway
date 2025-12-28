@@ -27,6 +27,7 @@ module.exports = {
             enabled: process.env.ORDERS_ENABLED !== 'false',
             target: process.env.ORDERS_TARGET || 'http://localhost:8000',
             route: '/orders',
+            basePath: '/',
             timeout: parseInt(process.env.ORDERS_TIMEOUT) || 5000,
             rateLimit: {
                 enabled: true,
@@ -40,6 +41,7 @@ module.exports = {
             enabled: process.env.PAYMENTS_ENABLED !== 'false',
             target: process.env.PAYMENTS_TARGET || 'http://localhost:8001',
             route: '/payments',
+            basePath: '/',
             timeout: parseInt(process.env.ORDERS_TIMEOUT) || 5000,
             rateLimit: {
                 enabled: true,
@@ -48,6 +50,48 @@ module.exports = {
                 message: 'Payments service rate limit exceeded.'
             }
         },
+        email:{
+            name: 'email-service',
+            enabled: process.env.EMAIL_ENABLED !== 'false',
+            target: process.env.EMAIL_TARGET || 'http://localhost:4002',
+            route: '/emails',
+            basePath: '/',
+            timeout: parseInt(process.env.EMAIL_TIMEOUT) || 5000,
+            rateLimit: {
+                enabled: true,
+                windowMs: parseInt(process.env.EMAIL_RATE_LIMIT_WINDOW) || 60000,
+                max: parseInt(process.env.EMAIL_RATE_LIMIT_MAX) || 50,
+                message: 'Email service rate limit exceeded.'
+            }
+        },
+        chat:{
+            name: 'chat-service',
+            enabled: process.env.CHAT_ENABLED !== 'false',
+            target: process.env.CHAT_TARGET || 'http://localhost:4005',
+            route: '/chats',
+            basePath: '/',
+            timeout: parseInt(process.env.CHAT_TIMEOUT) || 5000,
+            rateLimit: {
+                enabled: true,
+                windowMs: parseInt(process.env.CHAT_RATE_LIMIT_WINDOW) || 60000,
+                max: parseInt(process.env.CHAT_RATE_LIMIT_MAX) || 50,
+                message: 'Chat service rate limit exceeded.'
+            }
+        },
+        auth:{
+            name: 'auth-service',
+            enabled: process.env.AUTH_ENABLED !== 'false',
+            target: process.env.AUTH_TARGET || 'http://localhost:4001',
+            route: '/auth',
+            basePath: '/api/v1',
+            timeout: parseInt(process.env.AUTH_TIMEOUT) || 5000,
+            rateLimit: {
+                enabled: true,
+                windowMs: parseInt(process.env.AUTH_RATE_LIMIT_WINDOW) || 60000,
+                max: parseInt(process.env.AUTH_RATE_LIMIT_MAX) || 50,
+                message: 'Auth service rate limit exceeded.'
+            }
+        }
     },
     logging: {
         enabled: process.env.LOGGING_ENABLED !== 'false',

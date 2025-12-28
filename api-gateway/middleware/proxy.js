@@ -21,12 +21,16 @@ function fixProxyRequestBody(proxyReq, req) {
 }
 
 const createServiceProxy = (serviceName, serviceConfig) => {
+    const internalPath = serviceConfig.basePath || '';
     return createProxyMiddleware({
         target: serviceConfig.target,
         changeOrigin: true,
         proxyTimeout: serviceConfig.timeout,
         timeout: serviceConfig.timeout,
-        pathRewrite: {[`^${serviceConfig.route}`]: ''},
+        pathRewrite: (path) => {
+            const rewrittenPath = internalPath + path;
+            return rewrittenPath.replace(/\/+/g, '/');
+        },
         on: {
             proxyReq: (proxyReq, req) => {
                 proxyReq.setHeader('X-Request-ID', req.requestId);
@@ -36,7 +40,7 @@ const createServiceProxy = (serviceName, serviceConfig) => {
                 if (config.logging.enabled) {
                     const level = config.logging.level || 'info';
                     console[level](
-                        `[${req.requestId}] ➜ ${serviceName}: ${req.method} ${req.originalUrl} -> ${serviceConfig.target}`
+                        `[${req.requestId}] ➜ ${serviceName}: ${req.method} ${req.originalUrl} -> ${serviceConfig.target}${proxyReq.path}`
                     );
                 }
             },

@@ -22,13 +22,16 @@ Without an API Gateway:
 - Need consistent traffic control
 
 ### Features
-- Routing - Clients should not know internal service structure.
-- Rate Limiting - Stops abuse before it reaches services.
-- Timeout 
-- Validate JWT / API key and pass user context.
-- Request Validation - Reject bad requests early → save backend resources.
-- Request/Response Transformation - Convert client JSON → internal format.
-- Observability Hooks - Request ID, logging, metrics.
+- Routing: Clients never interact directly with internal services.
+- Request ID propagation: Every request is traceable end-to-end.
+- Timeout handling: Prevents requests from hanging indefinitely.
+- Standardized error responses Clients receive consistent error formats.
+- Backend failure handling: Clean failures without crashing or leaking internals.
+- Rate Limiting: Blocks abusive or excessive traffic before it reaches services.
+- Request Validation: Rejects malformed or unsafe requests early to protect backends.
+- Structured logging: Includes request IDs and service context.
+- CORS: Configurable and disabled by default.
+
 
 ### Quick Setup
 ```
@@ -40,5 +43,35 @@ Failure behavior
 
 - Too many requests → 429
 - Backend slow → 504
+- Backend unavailable → 502
 - Unknown route → 404
 
+### Configuration
+
+The API Gateway is fully configuration-driven via `config/gateway.config.js`.
+
+### Adding a New Service
+```
+services: {
+  inventory: {
+    enabled: true,
+    name: 'inventory',
+    route: '/inventory',
+    target: 'http://localhost:9000',
+    timeout: 2000
+  }
+}
+```
+
+## API Versioning Support
+
+The gateway supports versioned APIs through the `basePath` configuration:
+```javascript
+services: {
+  auth: {
+    route: '/auth',
+    basePath: '/api/v1',  // Routes become /auth/api/v1/*
+    target: 'http://localhost:4001'
+  }
+}
+```
