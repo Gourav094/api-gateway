@@ -33,20 +33,33 @@ Without an API Gateway:
 - CORS: Configurable and disabled by default.
 
 
-### Quick Setup
-```
-docker-compose up
-curl localhost:8080/orders
+## Installation
+
+```bash
+npm install
 ```
 
-Failure behavior
+## Running Locally
 
-- Too many requests → 429
-- Backend slow → 504
-- Backend unavailable → 502
-- Unknown route → 404
+```bash
+node gateway/server.js
+```
+
+## Running with Docker
+
+Build the image:
+```bash
+docker build -t api-gateway .
+```
+
+Run the container:
+```bash
+docker run -p 3000:3000 api-gateway
+```
+
 
 ### Configuration
+The gateway runs on port 3000 by default.
 
 The API Gateway is fully configuration-driven via `config/gateway.config.js`.
 
@@ -62,6 +75,13 @@ services: {
   }
 }
 ```
+
+### Failure behavior
+
+- Too many requests → 429
+- Backend slow → 504
+- Backend unavailable → 502
+- Unknown route → 404
 
 ## API Versioning Support
 
