@@ -26,9 +26,9 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["api-gateway", "scalable", "rate-limiter", "config"],
+  "author": "gourav094",
+  "license": "MIT",
   "type": "commonjs",
   "jest": {
     "testEnvironment": "node",
