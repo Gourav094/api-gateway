@@ -1,18 +1,5 @@
-## API Versioning Support
-
-The gateway supports versioned APIs through the `basePath` configuration:
-```javascript
-services: {
-  auth: {
-    route: '/auth',
-    basePath: '/api/v1',  // Routes become /auth/api/v1/*
-    target: 'http://localhost:4001'
-  }
-}
-```
-
----
 # API Gateway
+[![CI](https://github.com/Gourav094/api-gateway/actions/workflows/test.yml/badge.svg)](https://github.com/Gourav094/api-gateway/actions/workflows/test.yml)
 
 A lightweight, configurable API Gateway built with Node.js and Express. It provides centralized routing, request forwarding, rate limiting, timeouts, and error handling for microservices-based architectures.
 
@@ -137,4 +124,7 @@ docker run -p 3000:3000 api-gateway
 - Metrics & tracing (Prometheus, OpenTelemetry)
 - Circuit breaker & retries
 - API versioning
+
+
+
 
